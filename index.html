@@ -39,7 +39,7 @@
             max-width: 1100px;
             margin: 0 auto;
             display: grid;
-            grid-template-columns: 1fr 380px; /* Widened right column for detailed breakdown */
+            grid-template-columns: 1fr 380px;
             gap: 24px;
             align-items: start;
         }
@@ -196,7 +196,77 @@
             position: sticky;
             top: 20px;
         }
+        
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border);
+        }
 
+        .panel-header h3 {
+            margin: 0;
+            border: none;
+            padding: 0;
+        }
+
+        /* Toggle Switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            gap: 8px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+
+        /* Result Rows */
         .result-row {
             display: flex;
             justify-content: space-between;
@@ -220,13 +290,20 @@
         }
 
         .final-price {
-            background-color: #f0fdf4; /* Light green bg */
+            background-color: #f0fdf4;
             border: 1px solid var(--primary);
             color: var(--primary-hover);
             padding: 16px;
             border-radius: 8px;
             text-align: center;
             margin-top: 20px;
+            position: relative;
+        }
+        
+        .final-price.batch-mode {
+            background-color: #f4f4f5;
+            border-color: var(--text-muted);
+            color: var(--text-main);
         }
 
         .final-price .label {
@@ -251,6 +328,16 @@
             font-style: italic;
         }
 
+        .view-badge {
+            font-size: 0.7rem;
+            background: var(--text-main);
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 5px;
+            text-transform: uppercase;
+        }
+
         /* Buttons */
         .btn {
             display: inline-flex;
@@ -265,15 +352,6 @@
             width: 100%;
             margin-top: 12px;
             font-size: 0.95rem;
-        }
-
-        .btn-primary {
-            background-color: var(--text-main);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background-color: #000;
         }
 
         .btn-outline {
@@ -353,9 +431,22 @@
         <!-- Input Section -->
         <div class="main-inputs">
             
+            <!-- Job Settings -->
+            <div class="card" style="border-left: 4px solid var(--text-main);">
+                <h2>Job Details</h2>
+                <div class="input-group" style="margin-bottom: 0;">
+                    <label>Batch Quantity (Items Printed)</label>
+                    <div class="input-wrapper">
+                        <input type="number" id="batchQty" placeholder="1" value="1">
+                        <span class="unit">pcs</span>
+                    </div>
+                    <div class="hint">Enter <b>1</b> for a single item, or the total count for a batch print.</div>
+                </div>
+            </div>
+
             <!-- Material -->
             <div class="card">
-                <h2>Material</h2>
+                <h2>Material (Batch Total)</h2>
                 <div class="grid-2">
                     <div class="input-group">
                         <label>Filament Cost (per kg)</label>
@@ -365,7 +456,7 @@
                         </div>
                     </div>
                     <div class="input-group">
-                        <label>Filament Used</label>
+                        <label>Total Filament Used</label>
                         <div class="input-wrapper">
                             <input type="number" id="matGrams" placeholder="150">
                             <span class="unit">g</span>
@@ -380,44 +471,23 @@
                 <div id="extrasContainer">
                     <!-- Dynamic Rows inserted here -->
                 </div>
-                <button class="btn-add" onclick="addExtraRow()">+ Add Extra Part (Screw, Magnet, Glue)</button>
-            </div>
-
-            <!-- Printer Investment -->
-            <div class="card">
-                <h2>Printer Depreciation</h2>
-                <div class="grid-2">
-                    <div class="input-group">
-                        <label>Machine Cost (Capital)</label>
-                        <div class="input-wrapper">
-                            <span style="position:absolute; left:12px; color:var(--text-muted);">₱</span>
-                            <input type="number" id="machineCost" class="save-pref" placeholder="20000" style="padding-left: 24px;">
-                        </div>
-                    </div>
-                    <div class="input-group">
-                        <label>Est. Lifespan (Hours)</label>
-                        <div class="input-wrapper">
-                            <input type="number" id="lifespanHours" class="save-pref" placeholder="3000">
-                            <span class="unit">h</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="hint">Calculates hourly wear & tear. (e.g. 3000 hours ≈ 1 year of 24/7 printing)</div>
+                <button class="btn-add" onclick="addExtraRow()">+ Add Batch Extras (Screw, Magnet, Glue)</button>
+                <div class="hint" style="margin-top: 10px;">Enter total cost of extras for the entire batch.</div>
             </div>
 
             <!-- Time & Energy -->
             <div class="card">
-                <h2>Time & Energy</h2>
+                <h2>Time & Energy (Batch Total)</h2>
                 <div class="grid-3">
                     <div class="input-group">
-                        <label>Print Hours</label>
+                        <label>Total Hours</label>
                         <div class="input-wrapper">
                             <input type="number" id="timeHours" placeholder="2">
                             <span class="unit">h</span>
                         </div>
                     </div>
                     <div class="input-group">
-                        <label>Print Minutes</label>
+                        <label>Total Minutes</label>
                         <div class="input-wrapper">
                             <input type="number" id="timeMinutes" placeholder="30">
                             <span class="unit">m</span>
@@ -439,6 +509,23 @@
                         <span class="unit">/kWh</span>
                     </div>
                 </div>
+                <!-- Printer Investment -->
+                <div class="grid-2" style="margin-top: 20px; border-top: 1px dashed var(--border); padding-top: 15px;">
+                    <div class="input-group">
+                        <label>Machine Cost</label>
+                        <div class="input-wrapper">
+                            <span style="position:absolute; left:12px; color:var(--text-muted);">₱</span>
+                            <input type="number" id="machineCost" class="save-pref" placeholder="20000" style="padding-left: 24px;">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label>Lifespan (Hrs)</label>
+                        <div class="input-wrapper">
+                            <input type="number" id="lifespanHours" class="save-pref" placeholder="3000">
+                            <span class="unit">h</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Overhead & Labor -->
@@ -454,7 +541,7 @@
                         </div>
                     </div>
                     <div class="input-group">
-                        <label>Labor Time (Prep/Post)</label>
+                        <label>Total Labor (Prep/Post)</label>
                         <div class="input-wrapper">
                             <input type="number" id="laborMins" class="save-pref" placeholder="15">
                             <span class="unit">min</span>
@@ -467,13 +554,12 @@
                         <input type="number" id="failMargin" class="save-pref" placeholder="10">
                         <span class="unit">%</span>
                     </div>
-                    <div class="hint">Applied to production cost before profit.</div>
                 </div>
             </div>
 
             <!-- Commercial Settings -->
             <div class="card" style="border-left: 4px solid var(--primary);">
-                <h2>Commercial & Shipping</h2>
+                <h2>Commercial (Per Unit)</h2>
                 <div class="grid-2">
                     <div class="input-group">
                         <label>Platform Fee</label>
@@ -481,7 +567,7 @@
                             <input type="number" id="platformFee" class="save-pref" placeholder="7">
                             <span class="unit">%</span>
                         </div>
-                        <div class="hint">Shopee/Lazada cut</div>
+                        <div class="hint">Applied to unit price</div>
                     </div>
                     <div class="input-group">
                         <label>Tax Rate</label>
@@ -489,20 +575,19 @@
                             <input type="number" id="taxRate" class="save-pref" placeholder="0">
                             <span class="unit">%</span>
                         </div>
-                        <div class="hint">BIR/Sales Tax</div>
                     </div>
                 </div>
 
                 <div class="grid-2">
                     <div class="input-group">
-                        <label>Packaging Cost</label>
+                        <label>Packaging (Per Item)</label>
                         <div class="input-wrapper">
                             <span style="position:absolute; left:12px; color:var(--text-muted);">₱</span>
                             <input type="number" id="packagingCost" class="save-pref" placeholder="15.00" style="padding-left: 24px;">
                         </div>
                     </div>
                     <div class="input-group">
-                        <label>Shipping (charged to you)</label>
+                        <label>Shipping (Per Item)</label>
                         <div class="input-wrapper">
                             <span style="position:absolute; left:12px; color:var(--text-muted);">₱</span>
                             <input type="number" id="shippingCost" class="save-pref" placeholder="0.00" style="padding-left: 24px;">
@@ -530,7 +615,17 @@
         <!-- Results Section -->
         <div class="sticky-panel">
             <div class="card" style="border-top: 4px solid var(--primary);">
-                <h3>Cost Breakdown</h3>
+                <div class="panel-header">
+                    <h3>Breakdown</h3>
+                    <div class="toggle-container">
+                        <span>Total Batch</span>
+                        <label class="switch">
+                            <input type="checkbox" id="viewToggle" onchange="toggleView()">
+                            <span class="slider"></span>
+                        </label>
+                        <span style="font-weight:600; color:var(--primary);">Per Unit</span>
+                    </div>
+                </div>
                 
                 <div class="result-row">
                     <span>Raw Material</span>
@@ -576,16 +671,16 @@
                     <span id="resTotalCostBasis">₱0.00</span>
                 </div>
 
-                <div class="final-price">
-                    <div class="label">Platform Price</div>
+                <div class="final-price" id="finalPriceBox">
+                    <div class="label" id="finalPriceLabel">Platform Price</div>
                     <div class="value" id="resFinalPrice">₱0.00</div>
                     <div class="platform-note">
-                        Includes <span id="resMarkupPercent">0</span>% Markup & <span id="resFeePercent">0</span>% Platform Fee
+                        <span id="viewModeLabel">PER ITEM</span> | <span id="resMarkupPercent">0</span>% Markup
                     </div>
                 </div>
 
                 <div class="result-row" style="margin-top: 15px;">
-                    <span>Shipping Cost (Flat)</span>
+                    <span>Shipping</span>
                     <span id="resShipping">₱0.00</span>
                 </div>
 
@@ -611,6 +706,7 @@
     <script>
         // DOM Elements
         const inputs = {
+            batchQty: document.getElementById('batchQty'),
             matCost: document.getElementById('matCost'),
             matGrams: document.getElementById('matGrams'),
             machineCost: document.getElementById('machineCost'),
@@ -623,7 +719,6 @@
             laborMins: document.getElementById('laborMins'),
             failMargin: document.getElementById('failMargin'),
             markup: document.getElementById('markup'),
-            // New Commercial Inputs
             platformFee: document.getElementById('platformFee'),
             taxRate: document.getElementById('taxRate'),
             packagingCost: document.getElementById('packagingCost'),
@@ -638,23 +733,31 @@
             labor: document.getElementById('resLabor'),
             failure: document.getElementById('resFailure'),
             failPercent: document.getElementById('resFailPercent'),
-            productionCost: document.getElementById('resProductionCost'), // Old "Total Cost"
+            productionCost: document.getElementById('resProductionCost'),
             packaging: document.getElementById('resPackaging'),
             tax: document.getElementById('resTax'),
             taxPercent: document.getElementById('resTaxPercent'),
             totalCostBasis: document.getElementById('resTotalCostBasis'),
             finalPrice: document.getElementById('resFinalPrice'),
             markupPercent: document.getElementById('resMarkupPercent'),
-            feePercent: document.getElementById('resFeePercent'),
             profit: document.getElementById('resProfit'),
             platformFee: document.getElementById('resPlatformFee'),
-            shipping: document.getElementById('resShipping')
+            shipping: document.getElementById('resShipping'),
+            viewModeLabel: document.getElementById('viewModeLabel'),
+            finalPriceBox: document.getElementById('finalPriceBox'),
+            finalPriceLabel: document.getElementById('finalPriceLabel'),
+            toggle: document.getElementById('viewToggle')
+        };
+
+        let calculatedData = {
+            batch: {},
+            unit: {}
         };
 
         // --- Persistence Logic ---
         
         function loadSettings() {
-            const saved = JSON.parse(localStorage.getItem('bambuCalcSettingsPH_V2')) || {};
+            const saved = JSON.parse(localStorage.getItem('bambuCalcSettingsPH_V3')) || {};
             
             document.querySelectorAll('.save-pref').forEach(input => {
                 if (saved[input.id] !== undefined) {
@@ -673,14 +776,13 @@
             document.querySelectorAll('.save-pref').forEach(input => {
                 settings[input.id] = input.value;
             });
-            localStorage.setItem('bambuCalcSettingsPH_V2', JSON.stringify(settings));
+            localStorage.setItem('bambuCalcSettingsPH_V3', JSON.stringify(settings));
         }
 
         // --- Dynamic Extras Logic ---
 
         function addExtraRow(name = '', cost = '') {
             const container = document.getElementById('extrasContainer');
-            const id = Date.now();
             const div = document.createElement('div');
             div.className = 'extra-item-row';
             div.innerHTML = `
@@ -694,8 +796,7 @@
             container.appendChild(div);
             
             // Bind listeners for calc
-            const inputs = div.querySelectorAll('input');
-            inputs.forEach(i => i.addEventListener('input', calculate));
+            div.querySelectorAll('input').forEach(i => i.addEventListener('input', calculate));
         }
 
         function removeExtraRow(btn) {
@@ -705,8 +806,7 @@
 
         function getExtrasTotal() {
             let total = 0;
-            const costs = document.querySelectorAll('.extra-cost');
-            costs.forEach(input => {
+            document.querySelectorAll('.extra-cost').forEach(input => {
                 total += parseFloat(input.value) || 0;
             });
             return total;
@@ -720,105 +820,174 @@
                 v[key] = parseFloat(inputs[key].value) || 0;
             }
 
-            // 1. Base Costs
-            const materialCost = (v.matCost / 1000) * v.matGrams;
-            const extrasCost = getExtrasTotal();
-
-            const totalHours = v.timeHours + (v.timeMinutes / 60);
-            let depreciationCost = 0;
-            if (v.lifespanHours > 0) {
-                depreciationCost = (v.machineCost / v.lifespanHours) * totalHours;
-            }
-
-            const energyCost = (v.powerWatts / 1000) * totalHours * v.elecRate;
-            const laborCost = (v.laborRate / 60) * v.laborMins;
-
-            // 2. Production Subtotal (Before Tax/Fail)
-            const baseSubtotal = materialCost + energyCost + laborCost + depreciationCost;
-
-            // 3. Failure Buffer (Applied to base production)
-            const failureCost = baseSubtotal * (v.failMargin / 100);
-
-            // 4. Production Cost (Purely making the item)
-            const productionCost = baseSubtotal + failureCost + extrasCost;
-
-            // 5. Commercial Adds
-            // Tax is usually applied to the cost basis or the final price. 
-            // Simplified: Applying tax rate to the production cost to recover tax expense.
-            const taxAmount = productionCost * (v.taxRate / 100); 
+            const qty = Math.max(1, v.batchQty || 1);
             
-            // 6. Total Cost Basis (The absolute minimum you spend to ship this)
-            const totalCostBasis = productionCost + taxAmount + v.packagingCost;
+            // Auto-switch view based on Qty (User experience enhancement)
+            // Only switch if user hasn't manually toggled recently? 
+            // For simplicity: If qty > 1 and currently on batch view, maybe suggest unit view.
+            // Let's just update the calculations and let user toggle. 
 
-            // 7. Profit Calculation
-            const profitAmt = totalCostBasis * (v.markup / 100);
-
-            // 8. Pre-Platform Price
-            const priceBeforePlatform = totalCostBasis + profitAmt;
-
-            // 9. Platform Adjustment
-            // Formula: SellingPrice = PriceBeforePlatform / (1 - Fee%)
-            // This ensures you still get your full profit after Shopee takes 7% of the TOTAL.
-            let finalSellingPrice = 0;
-            let platformFeeAmt = 0;
-
-            if (v.platformFee < 100) {
-                finalSellingPrice = priceBeforePlatform / (1 - (v.platformFee / 100));
-                platformFeeAmt = finalSellingPrice - priceBeforePlatform;
+            // --- BATCH TOTALS (Inputs are treated as Batch Totals) ---
+            
+            // 1. Production Base (Batch)
+            const bMaterial = (v.matCost / 1000) * v.matGrams;
+            const bExtras = getExtrasTotal();
+            
+            const totalHours = v.timeHours + (v.timeMinutes / 60);
+            let bDepreciation = 0;
+            if (v.lifespanHours > 0) {
+                bDepreciation = (v.machineCost / v.lifespanHours) * totalHours;
             }
 
-            // --- Update UI ---
+            const bEnergy = (v.powerWatts / 1000) * totalHours * v.elecRate;
+            const bLabor = (v.laborRate / 60) * v.laborMins;
+
+            const bSubtotal = bMaterial + bEnergy + bLabor + bDepreciation;
+            const bFailure = bSubtotal * (v.failMargin / 100);
+            const bProductionCost = bSubtotal + bFailure + bExtras;
+
+            // --- UNIT CALCULATIONS ---
+            // Derive unit production cost from batch
+            const uProductionCost = bProductionCost / qty;
+            
+            // Commercial Costs (These inputs are PER UNIT)
+            const uPackaging = v.packagingCost;
+            
+            // Tax is applied to production + packaging (Cost Basis)
+            const uTaxAmt = (uProductionCost + uPackaging) * (v.taxRate / 100);
+            
+            const uTotalCostBasis = uProductionCost + uPackaging + uTaxAmt;
+            
+            const uProfit = uTotalCostBasis * (v.markup / 100);
+            const uPriceBeforePlatform = uTotalCostBasis + uProfit;
+
+            // Platform Logic
+            let uFinalPrice = 0;
+            let uPlatformFee = 0;
+            if (v.platformFee < 100) {
+                uFinalPrice = uPriceBeforePlatform / (1 - (v.platformFee / 100));
+                uPlatformFee = uFinalPrice - uPriceBeforePlatform;
+            }
+
+            const uShipping = v.shippingCost; // Pass through
+
+            // --- STORE DATA ---
+            calculatedData.unit = {
+                material: bMaterial / qty,
+                extras: bExtras / qty,
+                energy: bEnergy / qty,
+                depreciation: bDepreciation / qty,
+                labor: bLabor / qty,
+                failure: bFailure / qty,
+                productionCost: uProductionCost,
+                packaging: uPackaging,
+                tax: uTaxAmt,
+                totalCostBasis: uTotalCostBasis,
+                finalPrice: uFinalPrice,
+                profit: uProfit,
+                platformFee: uPlatformFee,
+                shipping: uShipping
+            };
+
+            calculatedData.batch = {
+                material: bMaterial,
+                extras: bExtras,
+                energy: bEnergy,
+                depreciation: bDepreciation,
+                labor: bLabor,
+                failure: bFailure,
+                productionCost: bProductionCost,
+                packaging: uPackaging * qty,
+                tax: uTaxAmt * qty,
+                totalCostBasis: uTotalCostBasis * qty,
+                finalPrice: uFinalPrice * qty,
+                profit: uProfit * qty,
+                platformFee: uPlatformFee * qty,
+                shipping: uShipping * qty // Assuming shipping scales with qty for "Total Batch Value"
+            };
+
+            // Auto-toggle to Per Unit if Qty > 1 and this is a fresh change?
+            // Actually, simply relying on the toggle state is safer.
+            // If qty > 1, ensure the toggle defaults to checked (Unit) on first load? 
+            // Let's just Render.
+            
+            renderResults();
+            saveSettings(); 
+        }
+
+        function toggleView() {
+            renderResults();
+        }
+
+        function renderResults() {
+            const isPerUnit = display.toggle.checked;
+            const data = isPerUnit ? calculatedData.unit : calculatedData.batch;
+            const qty = parseFloat(inputs.batchQty.value) || 1;
+
+            // Auto-check the toggle if qty > 1 and we haven't touched it? 
+            // We'll leave manual control to user, but update labels.
+
             const fmt = (num) => '₱' + num.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-            display.material.innerText = fmt(materialCost);
-            display.extras.innerText = fmt(extrasCost);
-            display.energy.innerText = fmt(energyCost);
-            display.depreciation.innerText = fmt(depreciationCost);
-            display.labor.innerText = fmt(laborCost);
-            display.failure.innerText = fmt(failureCost);
-            display.failPercent.innerText = `(${v.failMargin}%)`;
+            display.material.innerText = fmt(data.material);
+            display.extras.innerText = fmt(data.extras);
+            display.energy.innerText = fmt(data.energy);
+            display.depreciation.innerText = fmt(data.depreciation);
+            display.labor.innerText = fmt(data.labor);
+            display.failure.innerText = fmt(data.failure);
+            display.failPercent.innerText = `(${inputs.failMargin.value}%)`;
             
-            display.productionCost.innerText = fmt(productionCost);
+            display.productionCost.innerText = fmt(data.productionCost);
             
-            display.packaging.innerText = fmt(v.packagingCost);
-            display.tax.innerText = fmt(taxAmount);
-            display.taxPercent.innerText = v.taxRate;
+            display.packaging.innerText = fmt(data.packaging);
+            display.tax.innerText = fmt(data.tax);
+            display.taxPercent.innerText = inputs.taxRate.value;
             
-            display.totalCostBasis.innerText = fmt(totalCostBasis);
+            display.totalCostBasis.innerText = fmt(data.totalCostBasis);
             
-            display.finalPrice.innerText = fmt(finalSellingPrice);
-            display.markupPercent.innerText = v.markup;
-            display.feePercent.innerText = v.platformFee;
+            display.finalPrice.innerText = fmt(data.finalPrice);
+            display.markupPercent.innerText = inputs.markup.value;
             
-            display.profit.innerText = fmt(profitAmt);
-            display.platformFee.innerText = fmt(platformFeeAmt);
-            display.shipping.innerText = fmt(v.shippingCost);
+            display.profit.innerText = fmt(data.profit);
+            display.platformFee.innerText = fmt(data.platformFee);
+            display.shipping.innerText = fmt(data.shipping);
 
-            saveSettings(); 
+            // UI State Updates
+            if (isPerUnit) {
+                display.viewModeLabel.innerText = "PER ITEM";
+                display.finalPriceBox.classList.remove('batch-mode');
+                display.finalPriceLabel.innerText = "Rec. Unit Price";
+            } else {
+                display.viewModeLabel.innerText = `BATCH TOTAL (${qty} items)`;
+                display.finalPriceBox.classList.add('batch-mode');
+                display.finalPriceLabel.innerText = "Total Batch Value";
+            }
         }
 
         // --- Actions ---
 
         function resetForm() {
+            inputs.batchQty.value = '1';
             inputs.matGrams.value = '';
             inputs.timeHours.value = '';
             inputs.timeMinutes.value = '';
-            
-            // Clear extras
             document.getElementById('extrasContainer').innerHTML = '';
-            
             calculate();
         }
 
         function copyQuote() {
-            const finalPrice = document.getElementById('resFinalPrice').innerText;
+            const isPerUnit = display.toggle.checked;
+            const data = isPerUnit ? calculatedData.unit : calculatedData.batch;
+            const qty = inputs.batchQty.value;
+            const mode = isPerUnit ? `Per Unit` : `Total Batch (${qty} items)`;
+
             const items = [];
             document.querySelectorAll('.extra-name').forEach(i => {
                 if(i.value) items.push(i.value);
             });
             const extrasText = items.length > 0 ? `\nIncludes: ${items.join(', ')}` : '';
 
-            const text = `3D Print Quote\n----------------\nMaterial: ${inputs.matGrams.value}g\nPrint Time: ${inputs.timeHours.value}h ${inputs.timeMinutes.value}m${extrasText}\n\nTotal Price: ${finalPrice}`;
+            const text = `3D Print Quote [${mode}]\n----------------\nMaterial: ${inputs.matGrams.value}g (Batch)\nPrint Time: ${inputs.timeHours.value}h ${inputs.timeMinutes.value}m\nQty: ${qty}${extrasText}\n\nPrice: ${display.finalPrice.innerText}`;
             
             if (navigator.clipboard && window.isSecureContext) {
                  navigator.clipboard.writeText(text).then(showCopyMsg);
@@ -850,12 +1019,25 @@
         window.addEventListener('DOMContentLoaded', () => {
             loadSettings();
             
-            // Add listeners to all inputs
+            // Default toggle to Per Unit
+            display.toggle.checked = true;
+
+            // Add listeners
             Object.values(inputs).forEach(input => {
                 input.addEventListener('input', calculate);
             });
+            
+            // Listen to batchQty specifically to maybe auto-toggle
+            inputs.batchQty.addEventListener('input', () => {
+                const qty = parseFloat(inputs.batchQty.value) || 1;
+                if(qty > 1 && !display.toggle.checked) {
+                    // Optional: Auto switch to unit view if they type a qty > 1
+                    // display.toggle.checked = true; 
+                }
+                calculate();
+            });
 
-            calculate(); // Initial run
+            calculate();
         });
 
     </script>
