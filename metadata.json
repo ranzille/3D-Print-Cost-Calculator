@@ -1,0 +1,5 @@
+{
+  "name": "3D Print Command Center",
+  "description": "Professional 3D printing cost calculator and quote manager with G-Code parsing and cloud sync capabilities.",
+  "requestFramePermissions": []
+}
