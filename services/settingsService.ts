@@ -3,9 +3,11 @@ import { CalculatorInputs } from '../types';
 import { DEFAULT_INPUTS } from '../constants';
 
 const SETTINGS_KEY = 'bambuCalc_Settings';
+const USER_DEFAULTS_KEY = 'bambuCalc_UserDefaults';
 
 // Fields we want to remember
 const PERSISTENT_FIELDS: (keyof CalculatorInputs)[] = [
+  'owner',
   'materialCost',
   'wastageMultiplier',
   'machineCost',
@@ -55,9 +57,36 @@ export const saveSettings = (inputs: CalculatorInputs) => {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsToSave));
 };
 
+export const saveUserDefaults = (inputs: CalculatorInputs) => {
+  if (typeof window === 'undefined') return;
+
+  const defaultsToSave: Partial<CalculatorInputs> = {};
+  
+  PERSISTENT_FIELDS.forEach(field => {
+    // @ts-ignore
+    defaultsToSave[field] = inputs[field];
+  });
+
+  localStorage.setItem(USER_DEFAULTS_KEY, JSON.stringify(defaultsToSave));
+};
+
+export const loadUserDefaults = (): Partial<CalculatorInputs> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const saved = localStorage.getItem(USER_DEFAULTS_KEY);
+    if (!saved) return {};
+    return JSON.parse(saved);
+  } catch (e) {
+    console.error("Failed to load user defaults", e);
+    return {};
+  }
+};
+
 export const mergeWithDefaults = (saved: Partial<CalculatorInputs>): CalculatorInputs => {
+  const userDefaults = loadUserDefaults();
   return {
     ...DEFAULT_INPUTS,
+    ...userDefaults,
     ...saved,
     // Ensure transient fields are reset
     jobName: '',

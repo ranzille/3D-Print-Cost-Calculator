@@ -14,6 +14,7 @@ export interface ExtraCost {
 export interface CalculatorInputs {
   // Job Info
   jobName: string;
+  owner?: string; // New: Job Owner
   batchQty: number | string;
   notes?: string; // New: Job specific notes
   
@@ -98,6 +99,7 @@ export interface HistoryItem {
   createdAt: number; // Timestamp
   updatedAt?: number; // Timestamp of last edit
   name: string;
+  owner?: string; // New: Owner top-level
   inputs: CalculatorInputs;
   // Snapshot of calculations at the time of save to prevent logic drift
   resultsSnapshot?: CalculatedResults; 
@@ -130,10 +132,13 @@ export interface CapitalItem {
 export interface Product {
   id: string;
   name: string;
+  owner?: string; // New: Product Owner
   sku?: string;
   category: string;
   price: number; // Selling Price (VAT Inc)
   cost: number;  // Cost Basis
+  laborCost?: number; // New: Track labor portion
+  energyCost?: number; // New: Track energy portion
   taxRate: number; // VAT Rate included in price
   stock: number;
   imageUrl?: string;
@@ -147,16 +152,21 @@ export interface SaleItem {
   quantity: number;
   unitPrice: number;
   unitCost: number; // Snapshot for profit calc
+  laborCost?: number; // New: Snapshot
+  energyCost?: number; // New: Snapshot
   taxRate: number; // Snapshot of VAT rate at time of sale
+  itemOwner?: string; // New: Owner of the specific item/job
 }
 
 export interface Sale {
   id: string;
+  orderId?: string; // New: Grouping ID for multi-item purchases
   items: SaleItem[];
   totalRevenue: number;
   totalCost: number;
   totalProfit: number;
   paymentMethod: 'cash' | 'gcash' | 'card' | 'other';
+  owner?: string; // New: Who made the sale
   timestamp: number;
   dateStr: string;
   shipping?: number;

@@ -8,9 +8,10 @@ import {
   saveCapitalItem, getCapitalItems, deleteCapitalItem, updateCapitalItem,
   getProducts, saveProduct, deleteProduct, updateProduct,
   saveSale, getSales, updateSale, deleteSale,
-  getSyncStatus
+  getSyncStatus,
+  saveGlobalSettings, getGlobalSettings
 } from './services/firebase';
-import { loadSettings, saveSettings, mergeWithDefaults } from './services/settingsService';
+import { loadSettings, saveSettings, mergeWithDefaults, saveUserDefaults } from './services/settingsService';
 
 // View Components
 import { CalculatorView } from './components/CalculatorView';
@@ -22,7 +23,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 
 import { 
   Printer, Calculator, Package as PackageIcon, 
-  ShoppingCart, LayoutDashboard, Cloud, Settings, Download, Upload, Loader2, X
+  ShoppingCart, LayoutDashboard, Cloud, Settings, Download, Upload, Loader2, X, Save
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -64,7 +65,7 @@ function App() {
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
-  const [productToImport, setProductToImport] = useState<{name: string, price: number, cost: number, taxRate: number} | null>(null);
+  const [productToImport, setProductToImport] = useState<Omit<Product, 'id' | 'createdAt' | 'stock' | 'category'> | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
   // --- EFFECT HOOKS ---
@@ -86,6 +87,39 @@ function App() {
 
   useEffect(() => {
     refreshAllData();
+    // Fetch Global Defaults
+    getGlobalSettings().then(defaults => {
+        if (defaults) {
+            // Merge defaults with current inputs, giving precedence to current inputs IF they are specific job details, 
+            // but for rates/costs, we might want to update them if the user hasn't explicitly changed them in this session?
+            // Simpler approach: Update persistent fields in current inputs with global defaults 
+            // This ensures "Consistency" as requested.
+            setInputs(prev => {
+                // We only want to override "Persistent" fields (Rates, Costs)
+                // We do NOT want to override "Transient" fields (Job Name, Qty)
+                // The `mergeWithDefaults` helper logic is useful here.
+                
+                // Construct a new object with persistent fields from global defaults
+                // and transient fields from current state.
+                return {
+                    ...prev,
+                    ...defaults, // Apply global rates
+                    // Preserve current work inputs
+                    jobName: prev.jobName,
+                    batchQty: prev.batchQty,
+                    notes: prev.notes,
+                    materialGrams: prev.materialGrams,
+                    timeHours: prev.timeHours,
+                    timeMinutes: prev.timeMinutes,
+                    dryingHours: prev.dryingHours,
+                    dryingMinutes: prev.dryingMinutes,
+                    extras: prev.extras
+                };
+            });
+            // Also update local storage defaults cache to match cloud
+            saveUserDefaults(defaults as CalculatorInputs);
+        }
+    });
   }, []);
 
   // Recalculate when inputs change
@@ -143,6 +177,7 @@ function App() {
     try {
       const jobData = {
         name: inputs.jobName || 'Untitled Job',
+        owner: inputs.owner || 'Baz',
         date: new Date().toLocaleDateString(),
         inputs,
         resultsSnapshot: results,
@@ -183,8 +218,11 @@ function App() {
   const handleAddToInventory = () => {
       setProductToImport({
           name: inputs.jobName || 'Untitled Print',
+          owner: inputs.owner || 'Baz',
           price: results.unit.finalPrice,
           cost: results.unit.productionCost,
+          laborCost: results.unit.labor,
+          energyCost: results.unit.energy,
           taxRate: typeof inputs.taxRate === 'number' ? inputs.taxRate : parseFloat(inputs.taxRate as string)
       });
       setActiveView('products');
@@ -227,34 +265,74 @@ function App() {
 
   // Sale/POS Handlers
   const handleCheckout = async (paymentMethod: Sale['paymentMethod'], shipping: number) => {
-    let totalRevenue = 0;
-    let totalCost = 0;
+    const timestamp = Date.now();
+    // Generate Order ID: ORD-YYMMDD-XXXX
+    const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const orderId = `ORD-${datePart}-${randomPart}`;
+
+    // Calculate total items value to distribute shipping
+    const totalItemsValue = cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
     
-    // Calculate totals and deduct stock
-    for (const item of cart) {
-        totalRevenue += item.unitPrice * item.quantity;
-        totalCost += item.unitCost * item.quantity;
+    // Track distributed shipping to handle penny rounding on the last item
+    let distributedShipping = 0;
+
+    for (let i = 0; i < cart.length; i++) {
+        const item = cart[i];
         
+        // Optimistic Stock Update
         if (item.type === 'product') {
             const product = products.find(p => p.id === item.refId);
             if (product) {
-                await updateProduct(product.id, { stock: product.stock - item.quantity });
+                await updateProduct(product.id, { stock: Math.max(0, product.stock - item.quantity) });
             }
         }
+        
+        const itemRevenue = item.unitPrice * item.quantity;
+        const itemCost = item.unitCost * item.quantity;
+
+        // Calculate proportional shipping for this line item
+        let itemShipping = 0;
+        if (totalItemsValue > 0) {
+            if (i === cart.length - 1) {
+                // Last item gets the remainder to ensure exact total match
+                itemShipping = shipping - distributedShipping;
+            } else {
+                // Proportional share
+                const share = itemRevenue / totalItemsValue;
+                itemShipping = Number((shipping * share).toFixed(2));
+                distributedShipping += itemShipping;
+            }
+        }
+
+        // Ensure no undefined values are passed to Firebase
+        const sanitizedItem = {
+            ...item,
+            itemOwner: item.itemOwner || 'Baz',
+            laborCost: item.laborCost ?? 0,
+            energyCost: item.energyCost ?? 0,
+            taxRate: item.taxRate ?? 0
+        };
+
+        const sale: Omit<Sale, 'id'> = {
+            orderId, // Link all items to this order
+            items: [sanitizedItem],
+            // Revenue includes the item price AND the collected shipping
+            totalRevenue: itemRevenue + itemShipping, 
+            totalCost: itemCost,
+            // Profit is strictly Item Price - Item Cost. Shipping is assumed pass-through (Revenue cancels Cost).
+            // If we included shipping in profit, it would imply we didn't pay the courier.
+            totalProfit: itemRevenue - itemCost,
+            paymentMethod,
+            owner: sanitizedItem.itemOwner, 
+            shipping: itemShipping, // Record the distributed shipping amount
+            timestamp: timestamp,
+            dateStr: new Date().toLocaleDateString()
+        };
+
+        await saveSale(sale);
     }
     
-    const sale: Omit<Sale, 'id'> = {
-        items: cart,
-        totalRevenue: totalRevenue + shipping,
-        totalCost,
-        totalProfit: (totalRevenue + shipping) - totalCost,
-        paymentMethod,
-        shipping,
-        timestamp: Date.now(),
-        dateStr: new Date().toLocaleDateString()
-    };
-    
-    await saveSale(sale);
     setCart([]);
     refreshAllData();
   };
@@ -273,6 +351,31 @@ function App() {
   };
 
   // --- BACKUP / RESTORE LOGIC ---
+
+  const handleSaveDefaults = async () => {
+      // Save to Firebase
+      try {
+          const fieldsToSave = [
+            'owner', 'materialCost', 'wastageMultiplier', 'machineCost', 'lifespanHours', 
+            'powerWatts', 'dryerPowerWatts', 'elecRate', 'laborRate', 'laborMins', 'failMargin',
+            'usePlatformFees', 'platformCommissionFee', 'platformTransactionFee', 
+            'platformServiceFee', 'platformFixedFee', 'taxRate', 'packagingCost', 'shippingCost', 'markup'
+          ];
+          const settings: any = {};
+          fieldsToSave.forEach(f => {
+              // @ts-ignore
+              settings[f] = inputs[f];
+          });
+          
+          await saveGlobalSettings(settings);
+          // Also update local cache
+          saveUserDefaults(inputs);
+          
+          alert("Default settings saved to Cloud! Other devices will sync on reload.");
+      } catch (e) {
+          alert("Failed to save settings to cloud.");
+      }
+  };
 
   const handleExportData = () => {
       const data = {
@@ -303,27 +406,16 @@ function App() {
           const text = await file.text();
           const data = JSON.parse(text);
           
-          // 1. Fetch existing data for de-duplication (checking against current loaded state + more if needed)
-          // We can rely on the current state if it's reasonably fresh, or fetch fresh.
-          // To be safe against a large DB not fully loaded in state, we should fetch ID lists or rely on state if `refreshAllData` was called.
-          // For simplicity and performance in this client-side app, we'll dedupe against the currently loaded state `history`, `products`, etc.
-          // *Better:* Fetch fresh full lists to be sure.
-          
           const [exJobs, exProducts, exSales, exCapital] = await Promise.all([
-             getJobs(2000), // Check last 2000 jobs
+             getJobs(2000), 
              getProducts(),
              getSales(2000),
              getCapitalItems(2000)
           ]);
 
-          // Sets for fast lookup
-          // Job: De-dupe by createdAt timestamp
           const jobTimestamps = new Set(exJobs.map(j => j.createdAt));
-          // Product: De-dupe by Name (Case insensitive)
           const productNames = new Set(exProducts.map(p => p.name.toLowerCase()));
-          // Sales: De-dupe by timestamp
           const saleTimestamps = new Set(exSales.map(s => s.timestamp));
-          // Capital: De-dupe by Name + PurchaseDate + Price (Composite key)
           const getCapKey = (c: any) => `${c.name}|${c.purchaseDate}|${c.price}`;
           const capitalKeys = new Set(exCapital.map(c => getCapKey(c)));
 
@@ -336,8 +428,6 @@ function App() {
                  if (job.createdAt && jobTimestamps.has(job.createdAt)) {
                      skipped++; continue;
                  }
-                 // Legacy support: if no createdAt, maybe check name+date?
-                 // For now, assume good export format.
                  const { id, ...rest } = job; 
                  await saveJob(rest);
                  added++;
@@ -425,14 +515,21 @@ function App() {
                 </div>
             </div>
 
-            <nav className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-100">
+            <nav className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-100 hidden md:flex">
                 <NavItem view="calculator" icon={Calculator} label="Calculator" />
                 <NavItem view="products" icon={PackageIcon} label="Inventory" />
                 <NavItem view="pos" icon={ShoppingCart} label="POS" />
                 <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
             </nav>
 
-            <div className="flex items-center gap-2 w-32 justify-end">
+            {/* Mobile Nav Dropdown Placeholder (Simplified for now) */}
+            <div className="md:hidden">
+               <button onClick={() => setActiveView(activeView === 'calculator' ? 'dashboard' : 'calculator')} className="text-gray-600">
+                  <LayoutDashboard />
+               </button>
+            </div>
+
+            <div className="flex items-center gap-2 md:w-32 justify-end">
                  <button 
                     onClick={() => setShowSettingsModal(true)}
                     className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
@@ -528,7 +625,7 @@ function App() {
             )}
         </main>
 
-        {/* Modals */}
+        {/* Modals & Dialogs (Unchanged) */}
         <MathModal 
             isOpen={showMathModal} 
             onClose={() => setShowMathModal(false)}
@@ -537,7 +634,6 @@ function App() {
             currency={currency}
         />
 
-        {/* Settings Modal (Backup/Restore) */}
         {showSettingsModal && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
              <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-100">
@@ -552,6 +648,17 @@ function App() {
                  
                  <div className="space-y-4">
                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                         <h3 className="text-sm font-bold text-gray-800 mb-2">Calculator Defaults</h3>
+                         <p className="text-xs text-gray-500 mb-3">Save current calculator values (Material Cost, Rates, Fees) to the cloud as defaults for new jobs.</p>
+                         <button 
+                            onClick={handleSaveDefaults}
+                            className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 hover:border-brand-500 text-gray-700 hover:text-brand-600 font-bold py-2 rounded-lg transition-colors text-sm shadow-sm"
+                         >
+                             <Save size={16} /> Save Current as Global Default
+                         </button>
+                     </div>
+
+                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                          <h3 className="text-sm font-bold text-gray-800 mb-2">Backup Data</h3>
                          <p className="text-xs text-gray-500 mb-3">Download a JSON file containing all jobs, products, sales, and expenses.</p>
                          <button 
@@ -564,7 +671,7 @@ function App() {
 
                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                          <h3 className="text-sm font-bold text-gray-800 mb-2">Restore Data</h3>
-                         <p className="text-xs text-gray-500 mb-3">Import data from a backup file. Existing records will be skipped to prevent duplicates.</p>
+                         <p className="text-xs text-gray-500 mb-3">Import data from a backup file. Existing records will be skipped.</p>
                          <div className="relative">
                             <input 
                                 type="file" 
@@ -585,7 +692,7 @@ function App() {
                  </div>
                  
                  <div className="mt-6 text-center text-[10px] text-gray-400">
-                     v1.2.1 • Data is synced to Google Firebase
+                     v1.4.0 • Cloud Sync Active
                  </div>
              </div>
           </div>
@@ -594,7 +701,7 @@ function App() {
         <ConfirmDialog 
             isOpen={!!jobToDelete}
             title="Delete Job?"
-            message="This action cannot be undone. The job record will be permanently removed."
+            message="This action cannot be undone."
             onConfirm={confirmDeleteJob}
             onCancel={() => setJobToDelete(null)}
         />
@@ -618,14 +725,17 @@ function App() {
         <ConfirmDialog 
             isOpen={!!productToImport}
             title="Import to Inventory"
-            message={`Add "${productToImport?.name}" to Inventory?\nRecommended Price: ${currency(productToImport?.price || 0)}\nCost Basis: ${currency(productToImport?.cost || 0)}\nVAT Rate: ${productToImport?.taxRate}%`}
+            message={`Add "${productToImport?.name}" to Inventory?\nRecommended Price: ${currency(productToImport?.price || 0)}\nCost Basis: ${currency(productToImport?.cost || 0)}\nLabor: ${currency(productToImport?.laborCost || 0)}\nEnergy: ${currency(productToImport?.energyCost || 0)}\nVAT Rate: ${productToImport?.taxRate}%`}
             onConfirm={() => {
                 if (productToImport) {
                     saveProduct({
                         name: productToImport.name,
+                        owner: productToImport.owner,
                         category: 'Printed',
                         price: productToImport.price,
                         cost: productToImport.cost,
+                        laborCost: productToImport.laborCost,
+                        energyCost: productToImport.energyCost,
                         taxRate: productToImport.taxRate,
                         stock: 0,
                         createdAt: Date.now()
@@ -639,6 +749,26 @@ function App() {
             confirmText="Import"
             type="info"
         />
+
+        {/* Mobile Navigation Bottom Bar (Optional if top nav insufficient) */}
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around p-2 z-50">
+           <button onClick={() => setActiveView('calculator')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'calculator' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
+              <Calculator size={20} />
+              <span className="text-[9px] mt-1 font-bold">Calc</span>
+           </button>
+           <button onClick={() => setActiveView('products')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'products' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
+              <PackageIcon size={20} />
+              <span className="text-[9px] mt-1 font-bold">Items</span>
+           </button>
+           <button onClick={() => setActiveView('pos')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'pos' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
+              <ShoppingCart size={20} />
+              <span className="text-[9px] mt-1 font-bold">POS</span>
+           </button>
+           <button onClick={() => setActiveView('dashboard')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'dashboard' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
+              <LayoutDashboard size={20} />
+              <span className="text-[9px] mt-1 font-bold">Stats</span>
+           </button>
+        </div>
     </div>
   );
 }

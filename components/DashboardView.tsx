@@ -1,7 +1,7 @@
-
 import React, { useMemo, useState } from 'react';
 import { HistoryItem, CapitalItem, Sale } from '../types';
-import { Download, TrendingUp, DollarSign, Wallet, ShoppingCart, Edit2, X, Trash2, Plus, Calendar, User, Truck, Tag, Link as LinkIcon, Store, Search, ArrowUp, ArrowDown } from 'lucide-react';
+import { OWNERS } from '../constants';
+import { Download, TrendingUp, DollarSign, Wallet, ShoppingCart, Edit2, X, Trash2, Plus, Calendar, User, Truck, Tag, Link as LinkIcon, Store, Search, ArrowUp, ArrowDown, Zap, Users, PieChart, CreditCard, Hash } from 'lucide-react';
 import clsx from 'clsx';
 
 interface DashboardViewProps {
@@ -49,8 +49,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       store: '',
       purchaseDate: new Date().toISOString().split('T')[0],
       dateReceived: '',
-      orderedBy: 'BB',
-      paidBy: 'BB',
+      orderedBy: 'Baz',
+      paidBy: 'Baz',
       receiptLink: '',
       remarks: '',
       quantity: 1,
@@ -71,41 +71,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       quantity: number | '';
       unitPrice: string;
   }>(DEFAULT_EXPENSE);
-  
-  // Calculate aggregates
-  const stats = useMemo(() => {
-    // 1. Sales Revenue (Realized)
-    let totalSalesRev = 0;
-    let totalSalesProfit = 0;
-    let totalTaxCollected = 0;
 
-    sales.forEach(s => {
-      totalSalesRev += s.totalRevenue;
-      totalSalesProfit += s.totalProfit;
+  // Helper: Format Date to mm/dd/yyyy
+  const formatDate = (dateStr: string) => {
+      if (!dateStr) return '-';
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr; // Return original if parse fails
+      return date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+      });
+  };
+
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const startVal = e.target.value;
       
-      // Calculate tax portion for stats
-      if (s.items) {
-          s.items.forEach(i => {
-              const rate = i.taxRate || 0;
-              const netPrice = i.unitPrice / (1 + (rate/100));
-              totalTaxCollected += (i.unitPrice - netPrice) * i.quantity;
-          });
+      let nextEnd = dateRange.end;
+
+      if (startVal) {
+          const d = new Date(startVal);
+          // Sunday is 0, Saturday is 6.
+          const currentDay = d.getDay();
+          // Calculate days to add to reach next Saturday
+          const daysToSaturday = 6 - currentDay;
+          
+          const endDate = new Date(d);
+          endDate.setDate(d.getDate() + daysToSaturday);
+          
+          // Format to YYYY-MM-DD for input value
+          nextEnd = endDate.toISOString().split('T')[0];
       }
-    });
 
-    // 2. Potential Value (Saved Jobs)
-    let potentialRev = 0;
-    history.forEach(job => {
-       potentialRev += job.finalPrice || 0;
-    });
-
-    // 3. Capital
-    const totalCapital = capitalHistory.reduce((acc, curr) => acc + (curr.price || 0), 0);
-    const netPosition = totalSalesProfit - totalCapital;
-
-    return { totalSalesRev, totalSalesProfit, totalCapital, netPosition, potentialRev, totalTaxCollected };
-  }, [history, capitalHistory, sales]);
-
+      setDateRange({ start: startVal, end: nextEnd });
+  };
+  
   // Handle Sort
   const handleSort = (key: string) => {
       setSortConfig(current => ({
@@ -124,6 +124,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           result = result.filter(s => 
               s.dateStr.toLowerCase().includes(lower) || 
               s.paymentMethod.toLowerCase().includes(lower) || 
+              s.orderId?.toLowerCase().includes(lower) ||
               s.items.some(i => i.name.toLowerCase().includes(lower))
           );
       }
@@ -140,13 +141,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       // 3. Sort
       result.sort((a, b) => {
-          let valA: any = a[sortConfig.key as keyof Sale];
-          let valB: any = b[sortConfig.key as keyof Sale];
+          let valA: number | string = 0;
+          let valB: number | string = 0;
 
-          // Special Keys
-          if (sortConfig.key === 'date') {
-              valA = a.timestamp;
-              valB = b.timestamp;
+          // Helper to calculate virtual columns
+          const getLabor = (s: Sale) => s.items.reduce((acc, i) => acc + ((i.laborCost||0)*i.quantity), 0);
+          const getEnergy = (s: Sale) => s.items.reduce((acc, i) => acc + ((i.energyCost||0)*i.quantity), 0);
+
+          switch(sortConfig.key) {
+              case 'date':
+                  valA = a.timestamp;
+                  valB = b.timestamp;
+                  break;
+              case 'labor':
+                  valA = getLabor(a);
+                  valB = getLabor(b);
+                  break;
+              case 'energy':
+                  valA = getEnergy(a);
+                  valB = getEnergy(b);
+                  break;
+              case 'orderId':
+                  valA = a.orderId || '';
+                  valB = b.orderId || '';
+                  break;
+              default:
+                  // @ts-ignore
+                  valA = a[sortConfig.key];
+                  // @ts-ignore
+                  valB = b[sortConfig.key];
           }
 
           if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -202,26 +225,93 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return result;
   }, [capitalHistory, searchTerm, sortConfig, dateRange]);
 
+  // Calculate aggregates (Based on Filtered Data)
+  const stats = useMemo(() => {
+    // 1. Sales Revenue (Realized)
+    let totalSalesRev = 0;
+    let totalSalesProfit = 0;
+    let totalTaxCollected = 0;
+    let allocatedLabor = 0;
+    let allocatedEnergy = 0;
+
+    processedSales.forEach(s => {
+      totalSalesRev += s.totalRevenue;
+      totalSalesProfit += s.totalProfit;
+      
+      // Calculate tax portion for stats
+      if (s.items) {
+          s.items.forEach(i => {
+              const rate = i.taxRate || 0;
+              const netPrice = i.unitPrice / (1 + (rate/100));
+              totalTaxCollected += (i.unitPrice - netPrice) * i.quantity;
+
+              // Labor & Energy Accumulation
+              if (i.laborCost) allocatedLabor += i.laborCost * i.quantity;
+              if (i.energyCost) allocatedEnergy += i.energyCost * i.quantity;
+          });
+      }
+    });
+
+    // 3. Capital
+    const totalCapital = processedExpenses.reduce((acc, curr) => acc + (curr.price || 0), 0);
+    const netPosition = totalSalesProfit - totalCapital;
+
+    return { totalSalesRev, totalSalesProfit, totalCapital, netPosition, totalTaxCollected, allocatedLabor, allocatedEnergy };
+  }, [processedSales, processedExpenses]);
+
+  // Calculate Breakdowns
+  const breakdowns = useMemo(() => {
+      const salesByMethod: Record<string, number> = {};
+      processedSales.forEach(s => {
+          const method = s.paymentMethod || 'other';
+          salesByMethod[method] = (salesByMethod[method] || 0) + s.totalRevenue;
+      });
+
+      const expensesByCategory: Record<string, number> = {};
+      const expensesByPayer: Record<string, number> = {};
+      
+      processedExpenses.forEach(e => {
+          // Category Breakdown
+          const cat = e.category || 'Other';
+          expensesByCategory[cat] = (expensesByCategory[cat] || 0) + e.price;
+
+          // Payer Breakdown
+          const payer = e.paidBy || 'Unknown';
+          expensesByPayer[payer] = (expensesByPayer[payer] || 0) + e.price;
+      });
+
+      return { salesByMethod, expensesByCategory, expensesByPayer };
+  }, [processedSales, processedExpenses]);
+
 
   const downloadCSV = () => {
       let content = "";
       let filename = "";
 
       if (activeTab === 'sales') {
-        const headers = ['Date', 'Type', 'Total', 'VAT', 'Profit', 'Payment'];
+        const headers = ['Order ID', 'Date', 'Type', 'Owner', 'Total', 'Shipping', 'VAT', 'Profit', 'Labor Cost', 'Energy Cost', 'Payment'];
         const rows = processedSales.map(s => {
             let tax = 0;
+            let labor = 0;
+            let energy = 0;
             s.items.forEach(i => {
                 const rate = i.taxRate || 0;
                 const net = i.unitPrice / (1 + (rate/100));
                 tax += (i.unitPrice - net) * i.quantity;
+                labor += (i.laborCost || 0) * i.quantity;
+                energy += (i.energyCost || 0) * i.quantity;
             });
             return [
-                s.dateStr, 
+                s.orderId || '-',
+                formatDate(s.dateStr), 
                 'Sale', 
+                s.owner || '-',
                 s.totalRevenue.toFixed(2), 
+                s.shipping?.toFixed(2) || '0.00',
                 tax.toFixed(2), 
                 s.totalProfit.toFixed(2), 
+                labor.toFixed(2),
+                energy.toFixed(2),
                 s.paymentMethod
             ].join(',');
         });
@@ -230,7 +320,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       } else {
         const headers = ['Purchase Date', 'Item', 'Qty', 'Category', 'Total Price', 'Store', 'Platform', 'Ordered By', 'Paid By'];
         const rows = processedExpenses.map(c => [
-            c.purchaseDate, c.name, c.quantity || 1, c.category, c.price.toFixed(2), c.store, c.platform, c.orderedBy, c.paidBy
+            formatDate(c.purchaseDate), c.name, c.quantity || 1, c.category, c.price.toFixed(2), c.store, c.platform, c.orderedBy, c.paidBy
         ].join(','));
         content = [headers.join(','), ...rows].join('\n');
         filename = 'capital_expenses.csv';
@@ -251,6 +341,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       await onUpdateSale(editingSale.id, {
           dateStr: editingSale.dateStr,
           paymentMethod: editingSale.paymentMethod,
+          owner: editingSale.owner || 'Baz',
           totalRevenue: editingSale.totalRevenue,
           totalProfit: newProfit
       });
@@ -265,8 +356,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           store: item.store || '',
           purchaseDate: item.purchaseDate,
           dateReceived: item.dateReceived || '',
-          orderedBy: item.orderedBy || 'BB',
-          paidBy: item.paidBy || 'BB',
+          orderedBy: item.orderedBy || 'Baz',
+          paidBy: item.paidBy || 'Baz',
           receiptLink: item.receiptLink || '',
           remarks: item.remarks || '',
           quantity: item.quantity || 1,
@@ -303,8 +394,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           store: newExpense.store || '',
           purchaseDate: newExpense.purchaseDate || new Date().toLocaleDateString(),
           dateReceived: newExpense.dateReceived || null,
-          orderedBy: newExpense.orderedBy || 'BB',
-          paidBy: newExpense.paidBy || 'BB',
+          orderedBy: newExpense.orderedBy || 'Baz',
+          paidBy: newExpense.paidBy || 'Baz',
           receiptLink: newExpense.receiptLink || null,
           remarks: newExpense.remarks || null,
       };
@@ -327,7 +418,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const SortHeader = ({ label, sKey, align = 'left' }: { label: string, sKey: string, align?: string }) => (
       <th 
-        className={`px-6 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-600 hover:bg-gray-100 transition-colors text-${align}`}
+        className={`px-6 py-3 text-xs font-bold text-gray-500 uppercase cursor-pointer hover:text-brand-600 hover:bg-gray-100 transition-colors text-${align} whitespace-nowrap`}
         onClick={() => handleSort(sKey)}
       >
           <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
@@ -340,38 +431,58 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   );
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
+    <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative mb-16 md:mb-0">
         
         {/* Stats Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 flex-none">
-            <StatsCard 
-              icon={<DollarSign size={20} />} 
-              label="Realized Revenue" 
-              value={currency(stats.totalSalesRev)} 
-              subValue={`${currency(stats.totalTaxCollected)} VAT included`}
-              color="text-blue-600" bg="bg-blue-50" 
-            />
-             <StatsCard 
-              icon={<TrendingUp size={20} />} 
-              label="Net Profit" 
-              value={currency(stats.totalSalesProfit)} 
-              color="text-green-600" bg="bg-green-50" 
-            />
-             <StatsCard 
-              icon={<ShoppingCart size={20} />} 
-              label="Capital Expenses" 
-              value={currency(stats.totalCapital)} 
-              color="text-orange-600" bg="bg-orange-50" 
-            />
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
-                <div className={clsx("p-2 rounded-lg", stats.netPosition >= 0 ? "bg-brand-50 text-brand-600" : "bg-red-50 text-red-600")}>
-                    <Wallet size={20} />
+        <div className="flex-none p-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <StatsCard 
+                    icon={<DollarSign size={20} />} 
+                    label="Revenue (Filtered)" 
+                    value={currency(stats.totalSalesRev)} 
+                    subValue={`${currency(stats.totalTaxCollected)} VAT`}
+                    color="text-blue-600" bg="bg-blue-50" 
+                />
+                <StatsCard 
+                    icon={<TrendingUp size={20} />} 
+                    label="Net Profit (Filtered)" 
+                    value={currency(stats.totalSalesProfit)} 
+                    color="text-green-600" bg="bg-green-50" 
+                />
+                <StatsCard 
+                    icon={<ShoppingCart size={20} />} 
+                    label="Expenses (Filtered)" 
+                    value={currency(stats.totalCapital)} 
+                    color="text-orange-600" bg="bg-orange-50" 
+                />
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                    <div className={clsx("p-2 rounded-lg", stats.netPosition >= 0 ? "bg-brand-50 text-brand-600" : "bg-red-50 text-red-600")}>
+                        <Wallet size={20} />
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Net Position</p>
+                        <p className={clsx("text-xl font-bold", stats.netPosition >= 0 ? "text-brand-600" : "text-red-600")}>
+                        {stats.netPosition < 0 ? '-' : '+'}{currency(Math.abs(stats.netPosition))}
+                        </p>
+                    </div>
                 </div>
-                <div>
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Net Position</p>
-                    <p className={clsx("text-xl font-bold", stats.netPosition >= 0 ? "text-brand-600" : "text-red-600")}>
-                      {stats.netPosition < 0 ? '-' : '+'}{currency(Math.abs(stats.netPosition))}
-                    </p>
+            </div>
+
+            {/* New Stats Row for Labor/Energy Allocation */}
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-purple-50 p-3 rounded-xl border border-purple-100 flex items-center gap-3">
+                   <div className="p-2 bg-white rounded-lg text-purple-600 shadow-sm"><Users size={16} /></div>
+                   <div>
+                      <p className="text-[10px] font-bold text-purple-800 uppercase">Allocated Labor (Filtered)</p>
+                      <p className="text-lg font-bold text-purple-900">{currency(stats.allocatedLabor)}</p>
+                   </div>
+                </div>
+                <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-100 flex items-center gap-3">
+                   <div className="p-2 bg-white rounded-lg text-yellow-600 shadow-sm"><Zap size={16} /></div>
+                   <div>
+                      <p className="text-[10px] font-bold text-yellow-800 uppercase">Electricity Cost (Filtered)</p>
+                      <p className="text-lg font-bold text-yellow-900">{currency(stats.allocatedEnergy)}</p>
+                   </div>
                 </div>
             </div>
         </div>
@@ -390,7 +501,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     type="date" 
                     className="text-xs text-gray-700 border-none focus:ring-0 p-0 bg-transparent w-auto font-medium"
                     value={dateRange.start}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    onChange={handleStartDateChange}
                 />
                 <span className="text-gray-400 text-xs px-1">to</span>
                 <input 
@@ -436,14 +547,70 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Content Area */}
         <div className="flex-1 overflow-auto p-6">
              
+             {/* Dynamic Breakdown Section */}
+             <div className="mb-6 overflow-x-auto pb-2">
+                {activeTab === 'sales' && (
+                    <div className="flex gap-3">
+                        <div className="bg-brand-50 border border-brand-100 rounded-lg px-4 py-2 min-w-[140px] shadow-sm flex-none">
+                            <div className="flex items-center gap-1 text-[10px] text-brand-600 uppercase font-bold mb-1">
+                                <DollarSign size={12} /> Total Sales
+                            </div>
+                            <div className="text-lg font-black text-brand-900 leading-none">{currency(stats.totalSalesRev)}</div>
+                        </div>
+                        {Object.entries(breakdowns.salesByMethod).map(([method, amount]) => (
+                            <div key={method} className="bg-white border border-gray-200 rounded-lg px-4 py-2 min-w-[120px] shadow-sm flex-none">
+                                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 capitalize">{method}</div>
+                                <div className="text-base font-bold text-gray-800 leading-none">{currency(amount)}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {activeTab === 'expenses' && (
+                    <div className="flex flex-col gap-3">
+                        {/* Categories Row */}
+                        <div className="flex gap-3 overflow-x-auto pb-1">
+                            <div className="bg-orange-50 border border-orange-100 rounded-lg px-4 py-2 min-w-[140px] shadow-sm flex-none">
+                                <div className="flex items-center gap-1 text-[10px] text-orange-600 uppercase font-bold mb-1">
+                                    <ShoppingCart size={12} /> Total Expenses
+                                </div>
+                                <div className="text-lg font-black text-orange-900 leading-none">{currency(stats.totalCapital)}</div>
+                            </div>
+                            {Object.entries(breakdowns.expensesByCategory).map(([cat, amount]) => (
+                                <div key={cat} className="bg-white border border-gray-200 rounded-lg px-4 py-2 min-w-[120px] shadow-sm flex-none">
+                                    <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">{cat}</div>
+                                    <div className="text-base font-bold text-gray-800 leading-none">{currency(amount)}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                         {/* Personnel Breakdown Row */}
+                        <div className="flex gap-3 overflow-x-auto pt-2 border-t border-gray-100">
+                             <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase px-2">
+                                <CreditCard size={12} /> Paid By:
+                             </div>
+                             {Object.entries(breakdowns.expensesByPayer).map(([payer, amount]) => (
+                                <div key={payer} className="bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 min-w-[100px] shadow-sm flex-none flex items-center justify-between gap-3">
+                                    <span className="text-xs font-bold text-gray-600">{payer}</span>
+                                    <span className="text-xs font-bold text-gray-900">{currency(amount)}</span>
+                                </div>
+                             ))}
+                        </div>
+                    </div>
+                )}
+             </div>
+
              {/* SALES LEDGER TABLE */}
              {activeTab === 'sales' && (
-                <table className="w-full text-left border-collapse bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1000px]">
                     <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
                             <SortHeader label="Date" sKey="date" />
+                            <SortHeader label="Order ID" sKey="orderId" />
                             <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">Items</th>
-                            <SortHeader label="Method" sKey="paymentMethod" />
+                            <SortHeader label="Owner" sKey="owner" />
+                            <SortHeader label="Labor" sKey="labor" align="right" />
+                            <SortHeader label="Energy" sKey="energy" align="right" />
                             <SortHeader label="Total" sKey="totalRevenue" align="right" />
                             <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase text-right">VAT</th>
                             <SortHeader label="Profit" sKey="totalProfit" align="right" />
@@ -452,30 +619,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {processedSales.map((sale) => {
-                            // Calculate Sales Tax for display row
+                            // Calculate Sales Tax, Labor, and Energy for display row
                             const tax = sale.items.reduce((acc, i) => {
                                 const rate = i.taxRate || 0;
                                 const net = i.unitPrice / (1 + (rate/100));
                                 return acc + ((i.unitPrice - net) * i.quantity);
                             }, 0);
-
+                            
+                            const labor = sale.items.reduce((acc, i) => acc + ((i.laborCost || 0) * i.quantity), 0);
+                            const energy = sale.items.reduce((acc, i) => acc + ((i.energyCost || 0) * i.quantity), 0);
+                            
                             return (
                             <tr key={sale.id} className="hover:bg-gray-50 transition-colors group">
-                                <td className="px-6 py-3 text-sm text-gray-500 whitespace-nowrap">{sale.dateStr}</td>
+                                <td className="px-6 py-3 text-sm text-gray-500 whitespace-nowrap">{formatDate(sale.dateStr)}</td>
+                                <td className="px-6 py-3 text-xs text-gray-400 font-mono">{sale.orderId || '-'}</td>
                                 <td className="px-6 py-3 text-sm text-gray-900">
                                 <div className="flex flex-col">
                                     {sale.items.map((i, idx) => (
                                     <span key={idx} className="text-xs text-gray-600">{i.quantity}x {i.name}</span>
                                     ))}
+                                    {sale.shipping ? (
+                                        <span className="text-[10px] text-gray-400 flex items-center gap-1 mt-0.5"><Truck size={10}/> Shipping: {currency(sale.shipping)}</span>
+                                    ) : null}
                                 </div>
                                 </td>
-                                <td className="px-6 py-3 text-sm text-gray-500 capitalize">{sale.paymentMethod}</td>
+                                <td className="px-6 py-3 text-sm text-gray-500">
+                                    <span className="bg-gray-100 text-gray-600 text-xs font-bold px-1.5 rounded">{sale.owner || '-'}</span>
+                                    <div className="text-[10px] text-gray-400 mt-0.5 capitalize">{sale.paymentMethod}</div>
+                                </td>
+                                <td className="px-6 py-3 text-sm text-gray-500 text-right font-mono">{currency(labor)}</td>
+                                <td className="px-6 py-3 text-sm text-gray-500 text-right font-mono">{currency(energy)}</td>
                                 <td className="px-6 py-3 text-sm text-gray-900 font-bold text-right">{currency(sale.totalRevenue)}</td>
                                 <td className="px-6 py-3 text-sm text-gray-400 text-right">{currency(tax)}</td>
                                 <td className="px-6 py-3 text-sm text-green-600 font-bold text-right">{currency(sale.totalProfit)}</td>
                                 <td className="px-6 py-3 text-right">
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                        <button onClick={() => setEditingSale(sale)} className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded">
+                                        <button 
+                                            onClick={() => setEditingSale({
+                                                ...sale, 
+                                                // Round to 2 decimals on open to prevent float artifacts
+                                                totalRevenue: Math.round(sale.totalRevenue * 100) / 100
+                                            })} 
+                                            className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded"
+                                        >
                                             <Edit2 size={16} />
                                         </button>
                                         <button onClick={() => onDeleteSale(sale.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
@@ -485,14 +671,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 </td>
                             </tr>
                         )})}
-                        {processedSales.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-gray-400">No sales recorded matching criteria.</td></tr>}
+                        {processedSales.length === 0 && <tr><td colSpan={10} className="text-center py-12 text-gray-400">No sales recorded matching criteria.</td></tr>}
                     </tbody>
                 </table>
+                </div>
              )}
 
              {/* CAPITAL EXPENSES TABLE */}
              {activeTab === 'expenses' && (
-                <table className="w-full text-left border-collapse bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[800px]">
                     <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
                             <SortHeader label="Item Details" sKey="name" />
@@ -518,7 +706,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                                 item.category === 'Filament' && "bg-blue-100 text-blue-700",
                                                 item.category === 'Printer' && "bg-purple-100 text-purple-700",
                                                 item.category === 'Parts' && "bg-orange-100 text-orange-700",
-                                                item.category === 'Other' && "bg-gray-100 text-gray-700"
+                                                !['Filament', 'Printer', 'Parts'].includes(item.category) && "bg-gray-100 text-gray-700"
                                             )}>
                                                 {item.category}
                                             </span>
@@ -541,11 +729,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                         <div className="flex items-center gap-1 text-xs text-gray-600" title="Ordered">
                                             <Calendar size={12} className="text-gray-400" /> 
                                             {/* Legacy data support: item.date might exist instead of purchaseDate */}
-                                            {item.purchaseDate || (item as any).date}
+                                            {formatDate(item.purchaseDate || (item as any).date)}
                                         </div>
                                         {item.dateReceived && (
                                             <div className="flex items-center gap-1 text-xs text-green-600 font-medium" title="Received">
-                                                <Truck size={12} /> {item.dateReceived}
+                                                <Truck size={12} /> {formatDate(item.dateReceived)}
                                             </div>
                                         )}
                                     </div>
@@ -592,10 +780,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {processedExpenses.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-gray-400">No expenses recorded matching criteria.</td></tr>}
                     </tbody>
                 </table>
+                </div>
              )}
         </div>
         
-        {/* ... (Modals remain unchanged, just referencing context closing) */}
+        {/* Modals */}
         {/* Edit Sale Modal */}
         {editingSale && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -613,6 +802,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 value={editingSale.dateStr}
                                 onChange={(e) => setEditingSale({...editingSale, dateStr: e.target.value})}
                             />
+                        </div>
+                         <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">Owner</label>
+                            <input 
+                                className="w-full text-sm border-gray-300 rounded-lg p-2.5"
+                                value={editingSale.owner || 'Baz'}
+                                list="modal-owners"
+                                onChange={(e) => setEditingSale({...editingSale, owner: e.target.value})}
+                            />
+                            <datalist id="modal-owners">
+                                {OWNERS.map(o => <option key={o} value={o} />)}
+                            </datalist>
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-500 mb-1">Payment Method</label>
@@ -646,8 +847,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
             </div>
         )}
-
-        {/* Add/Edit Expense Modal */}
+        
+        {/* ... Expense Modal (Existing code) ... */}
         {isAddingExpense && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -687,12 +888,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div className="grid grid-cols-3 gap-4 mb-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Category</label>
-                                <select className="w-full text-sm border-gray-300 rounded-lg p-2.5" value={newExpense.category} onChange={e => setNewExpense({...newExpense, category: e.target.value as any})}>
-                                    <option value="Printer">Printer</option>
-                                    <option value="Filament">Filament</option>
-                                    <option value="Parts">Parts</option>
-                                    <option value="Other">Other</option>
-                                </select>
+                                <input 
+                                    list="category-suggestions"
+                                    className="w-full text-sm border-gray-300 rounded-lg p-2.5 focus:ring-brand-500" 
+                                    value={newExpense.category} 
+                                    onChange={e => setNewExpense({...newExpense, category: e.target.value as any})}
+                                    placeholder="Select or Type..."
+                                />
+                                <datalist id="category-suggestions">
+                                    <option value="Printer" />
+                                    <option value="Filament" />
+                                    <option value="Parts" />
+                                    <option value="Other" />
+                                </datalist>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Platform</label>
@@ -719,16 +927,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Ordered By</label>
                                 <select className="w-full text-sm border-gray-300 rounded-lg p-2.5" value={newExpense.orderedBy} onChange={e => setNewExpense({...newExpense, orderedBy: e.target.value})}>
-                                    <option value="BB">BB</option>
-                                    <option value="RB">RB</option>
+                                    <option value="Baz">Baz</option>
+                                    <option value="Ranz">Ranz</option>
                                     <option value="Other">Other</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Paid By</label>
                                 <select className="w-full text-sm border-gray-300 rounded-lg p-2.5" value={newExpense.paidBy} onChange={e => setNewExpense({...newExpense, paidBy: e.target.value})}>
-                                    <option value="BB">BB</option>
-                                    <option value="RB">RB</option>
+                                    <option value="Baz">Baz</option>
+                                    <option value="Ranz">Ranz</option>
                                     <option value="Shared">Shared</option>
                                 </select>
                             </div>
@@ -754,42 +962,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   );
 };
 
-interface StatsCardProps {
-    icon: React.ReactNode;
-    label: string;
-    value: string;
-    subValue?: string;
-    color: string;
-    bg: string;
-}
-
-const StatsCard: React.FC<StatsCardProps> = ({ icon, label, value, subValue, color, bg }) => (
-    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
-        <div className={clsx("p-2 rounded-lg flex items-center justify-center", bg, color)}>
-            {icon}
-        </div>
+const StatsCard = ({ icon, label, value, subValue, color, bg }: { icon: React.ReactNode, label: string, value: string, subValue?: string, color: string, bg: string }) => (
+    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-start">
         <div>
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{label}</p>
-            <p className={clsx("text-xl font-bold", color || "text-gray-900")}>
-                {value}
-            </p>
-            {subValue && <p className="text-[10px] text-gray-400">{subValue}</p>}
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">{label}</p>
+            <p className="text-xl font-black text-gray-900 leading-none">{value}</p>
+            {subValue && <p className="text-[10px] text-gray-400 mt-1 font-medium">{subValue}</p>}
+        </div>
+        <div className={clsx("p-2 rounded-lg", bg, color)}>
+            {icon}
         </div>
     </div>
 );
 
-interface TabButtonProps {
-    active: boolean;
-    onClick: () => void;
-    label: string;
-}
-
-const TabButton: React.FC<TabButtonProps> = ({ active, onClick, label }) => (
+const TabButton = ({ active, onClick, label }: { active: boolean, onClick: () => void, label: string }) => (
     <button 
         onClick={onClick}
         className={clsx(
-            "pb-3 text-sm font-bold border-b-2 transition-colors",
-            active ? "border-brand-600 text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            "pb-3 text-sm font-bold border-b-2 transition-all",
+            active ? "border-brand-600 text-brand-600" : "border-transparent text-gray-400 hover:text-gray-600"
         )}
     >
         {label}

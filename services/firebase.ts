@@ -1,8 +1,8 @@
 
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, limit, Timestamp } from "firebase/firestore";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, limit, Timestamp, setDoc, getDoc } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
-import { HistoryItem, CapitalItem, Product, Sale } from "../types";
+import { HistoryItem, CapitalItem, Product, Sale, CalculatorInputs } from "../types";
 
 // --- CONFIGURATION ---
 const firebaseConfig = {
@@ -40,6 +40,7 @@ const JOBS_COLLECTION = "print_jobs";
 const CAPITAL_COLLECTION = "capital_expenses";
 const PRODUCTS_COLLECTION = "products";
 const SALES_COLLECTION = "sales";
+const SETTINGS_COLLECTION = "settings";
 
 // --- HELPERS ---
 const checkDb = () => {
@@ -259,3 +260,30 @@ export const getSales = async (limitCount = 100): Promise<Sale[]> => {
     return [];
   }
 };
+
+// --- GLOBAL SETTINGS ---
+
+export const saveGlobalSettings = async (settings: Partial<CalculatorInputs>): Promise<void> => {
+    const database = checkDb();
+    try {
+        await setDoc(doc(database, SETTINGS_COLLECTION, "global_defaults"), settings);
+    } catch(e) {
+        console.error("Error saving global settings", e);
+        throw e;
+    }
+}
+
+export const getGlobalSettings = async (): Promise<Partial<CalculatorInputs> | null> => {
+    const database = checkDb();
+    try {
+        const docRef = doc(database, SETTINGS_COLLECTION, "global_defaults");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            return docSnap.data() as Partial<CalculatorInputs>;
+        }
+        return null;
+    } catch(e) {
+        console.error("Error fetching global settings", e);
+        return null;
+    }
+}

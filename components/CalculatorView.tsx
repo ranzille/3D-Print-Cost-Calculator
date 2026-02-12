@@ -1,5 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { CalculatorInputs, CalculatedResults, HistoryItem, ExtraCost } from '../types';
+
+import React, { useState, useCallback } from 'react';
+import { CalculatorInputs, CalculatedResults, HistoryItem } from '../types';
+import { OWNERS } from '../constants';
 import { InputGroup } from './InputGroup';
 import { SummaryChart } from './SummaryChart';
 import { HistoryPanel } from './HistoryPanel';
@@ -110,11 +112,13 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
 
     // Implied Profit
     const impliedProfit = netReceived - opCost;
+    
+    // Markup Calculation (No rounding to preserve precision)
     const newMarkup = (impliedProfit / opCost) * 100;
 
     setInputs(prev => ({
         ...prev,
-        markup: parseFloat(newMarkup.toFixed(2))
+        markup: newMarkup 
     }));
   };
 
@@ -145,13 +149,18 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
       <div 
         className={clsx(
           "bg-white border-r border-gray-200 flex flex-col transition-all duration-300 z-30 flex-none h-full",
-          isSidebarOpen ? "w-72" : "w-0 overflow-hidden"
+          "fixed md:relative inset-y-0 left-0", // Fix to viewport on mobile, relative on desktop
+          isSidebarOpen ? "w-72 shadow-2xl md:shadow-none translate-x-0" : "-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden"
         )}
       >
         <div className="p-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-none">
             <h3 className="font-bold text-gray-700 text-xs flex items-center gap-2 uppercase tracking-wide">
                 <History size={14} /> Recent Jobs
             </h3>
+            {/* Close button for mobile */}
+            <button className="md:hidden text-gray-400" onClick={() => setIsSidebarOpen(false)}>
+               <X size={20} />
+            </button>
         </div>
         <div className="flex-1 overflow-y-auto py-2">
             <HistoryPanel 
@@ -168,7 +177,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
       <button
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
         className={clsx(
-            "absolute top-4 z-50 bg-white border border-gray-200 shadow-md h-8 w-6 rounded-r-lg flex items-center justify-center text-gray-400 hover:text-brand-600 transition-all duration-300 cursor-pointer border-l-0",
+            "absolute top-4 z-50 bg-white border border-gray-200 shadow-md h-8 w-6 rounded-r-lg flex items-center justify-center text-gray-400 hover:text-brand-600 transition-all duration-300 cursor-pointer border-l-0 hidden md:flex",
             isSidebarOpen ? "left-72" : "left-0"
         )}
         title={isSidebarOpen ? "Collapse History" : "Expand History"}
@@ -176,8 +185,27 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
         {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
       </button>
 
+      {/* Mobile Toggle Button (Visible only when sidebar closed on mobile) */}
+      <button
+        onClick={() => setIsSidebarOpen(true)}
+        className={clsx(
+            "absolute top-4 left-0 z-20 bg-white border border-gray-200 shadow-md h-8 w-8 rounded-r-lg flex items-center justify-center text-gray-400 hover:text-brand-600 md:hidden",
+            isSidebarOpen ? "hidden" : "flex"
+        )}
+      >
+        <History size={16} />
+      </button>
+      
+      {/* Overlay for mobile when sidebar is open */}
+      {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-20 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+      )}
+
       {/* Main Scrollable Content */}
-      <div className="flex-1 overflow-y-auto bg-gray-50/50 p-6 md:p-8">
+      <div className="flex-1 overflow-y-auto bg-gray-50/50 p-6 md:p-8 mb-16 md:mb-0">
         <div className="max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-12 gap-8">
           
           {/* LEFT COLUMN: INPUTS */}
@@ -206,11 +234,25 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <div className="md:col-span-2">
                         <InputGroup label="Job Name" placeholder="e.g. Iron Man Helmet" value={inputs.jobName} onChange={(e) => handleInputChange('jobName', e.target.value)} />
                     </div>
-                    <div>
-                        <InputGroup label="Batch Quantity" type="number" suffix="pcs" value={inputs.batchQty} onChange={(e) => handleInputChange('batchQty', e.target.value)} />
+                     <div>
+                        <div className="mb-4">
+                            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                                Owner
+                            </label>
+                            <input 
+                                className="w-full bg-white border border-gray-200 text-gray-900 text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block p-2.5 transition-all"
+                                list="owner-suggestions"
+                                placeholder="e.g. Baz"
+                                value={inputs.owner || ''}
+                                onChange={(e) => handleInputChange('owner', e.target.value)}
+                            />
+                            <datalist id="owner-suggestions">
+                                {OWNERS.map(o => <option key={o} value={o} />)}
+                            </datalist>
+                        </div>
                     </div>
                     <div>
-                        <InputGroup label="Filament Used" type="number" suffix="g" value={inputs.materialGrams} onChange={(e) => handleInputChange('materialGrams', e.target.value)} />
+                        <InputGroup label="Batch Quantity" type="number" suffix="pcs" value={inputs.batchQty} onChange={(e) => handleInputChange('batchQty', e.target.value)} />
                     </div>
                 </div>
 
@@ -219,10 +261,16 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                         <InputGroup label="Material Cost (1kg)" type="number" prefix="₱" value={inputs.materialCost} onChange={(e) => handleInputChange('materialCost', e.target.value)} />
                     </div>
                     <div>
-                            <InputGroup label="Print Time (Hrs)" type="number" value={inputs.timeHours} onChange={(e) => handleInputChange('timeHours', e.target.value)} />
+                        <InputGroup label="Filament Used" type="number" suffix="g" value={inputs.materialGrams} onChange={(e) => handleInputChange('materialGrams', e.target.value)} />
                     </div>
-                    <div>
-                            <InputGroup label="Print Time (Mins)" type="number" value={inputs.timeMinutes} onChange={(e) => handleInputChange('timeMinutes', e.target.value)} />
+                     <div>
+                        <InputGroup label="Print Time (Hrs)" type="number" value={inputs.timeHours} onChange={(e) => handleInputChange('timeHours', e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                     <div>
+                        <InputGroup label="Print Time (Mins)" type="number" value={inputs.timeMinutes} onChange={(e) => handleInputChange('timeMinutes', e.target.value)} />
                     </div>
                 </div>
 

@@ -1,8 +1,11 @@
 
 import { CalculatorInputs } from './types';
 
+export const OWNERS = ['Baz', 'Ranz', 'Shared'];
+
 export const DEFAULT_INPUTS: CalculatorInputs = {
   jobName: '',
+  owner: 'Baz',
   batchQty: 1,
   notes: '',
   materialCost: 850,
