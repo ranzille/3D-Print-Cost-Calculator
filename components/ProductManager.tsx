@@ -164,8 +164,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ products, onAdd,
   );
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-6 mb-16 md:mb-0">
-      
+    <div className="max-w-6xl mx-auto p-4 md:p-6 mb-16 md:mb-0 space-y-6 animate-in fade-in">
       <div className="flex justify-between items-center mb-6">
         <div>
            <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -279,6 +278,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ products, onAdd,
           </thead>
           <tbody className="divide-y divide-gray-100">
              {processedProducts.map(p => {
+
                const rate = (p.taxRate !== undefined && p.taxRate !== null) ? p.taxRate : 0;
                const netPrice = p.price / (1 + (rate/100));
                const profit = netPrice - p.cost;

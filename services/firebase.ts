@@ -2,7 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, limit, Timestamp, setDoc, getDoc } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
-import { HistoryItem, CapitalItem, Product, Sale, CalculatorInputs } from "../types";
+import { HistoryItem, CapitalItem, Product, Sale, CalculatorInputs, Filament } from "../types";
 
 // --- CONFIGURATION ---
 const firebaseConfig = {
@@ -39,6 +39,7 @@ export const getSyncStatus = () => {
 const JOBS_COLLECTION = "print_jobs";
 const CAPITAL_COLLECTION = "capital_expenses";
 const PRODUCTS_COLLECTION = "products";
+const FILAMENTS_COLLECTION = "filaments";
 const SALES_COLLECTION = "sales";
 const SETTINGS_COLLECTION = "settings";
 
@@ -204,6 +205,52 @@ export const updateProduct = async (id: string, updates: Partial<Product>): Prom
       await updateDoc(doc(database, PRODUCTS_COLLECTION, id), updates);
   } catch(e) {
       console.error("Error updating product:", e);
+  }
+};
+
+// --- FILAMENTS (INVENTORY) ---
+
+export const saveFilament = async (item: Omit<Filament, 'id'>): Promise<Filament> => {
+  const database = checkDb();
+  try {
+    const docRef = await addDoc(collection(database, FILAMENTS_COLLECTION), item);
+    return { ...item, id: docRef.id };
+  } catch (e) {
+    console.error("Error saving filament:", e);
+    throw e;
+  }
+};
+
+export const getFilaments = async (): Promise<Filament[]> => {
+  const database = checkDb();
+  try {
+    const q = query(collection(database, FILAMENTS_COLLECTION), orderBy("createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as unknown as Filament[];
+  } catch (e) {
+    console.error("Error fetching filaments:", e);
+    return [];
+  }
+};
+
+export const deleteFilament = async (id: string): Promise<void> => {
+  const database = checkDb();
+  try {
+      await deleteDoc(doc(database, FILAMENTS_COLLECTION, id));
+  } catch(e) {
+      console.error("Error deleting filament:", e);
+  }
+};
+
+export const updateFilament = async (id: string, updates: Partial<Filament>): Promise<void> => {
+  const database = checkDb();
+  try {
+      await updateDoc(doc(database, FILAMENTS_COLLECTION, id), updates);
+  } catch(e) {
+      console.error("Error updating filament:", e);
   }
 };
 

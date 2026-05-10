@@ -20,16 +20,17 @@ import { MathModal } from './components/MathModal';
 import { ProductManager } from './components/ProductManager';
 import { POSInterface } from './components/POSInterface';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { FilamentInventory } from './components/FilamentInventory';
 
 import { 
   Printer, Calculator, Package as PackageIcon, 
-  ShoppingCart, LayoutDashboard, Cloud, Settings, Download, Upload, Loader2, X, Save
+  ShoppingCart, LayoutDashboard, Cloud, Settings, Download, Upload, Loader2, X, Save, Database
 } from 'lucide-react';
 import clsx from 'clsx';
 
 function App() {
   // --- STATE MANAGEMENT ---
-  const [activeView, setActiveView] = useState<'calculator' | 'products' | 'pos' | 'dashboard'>('calculator');
+  const [activeView, setActiveView] = useState<'calculator' | 'products' | 'pos' | 'dashboard' | 'filaments'>('calculator');
   
   // Calculator State
   const [inputs, setInputs] = useState<CalculatorInputs>(() => {
@@ -518,6 +519,7 @@ function App() {
             <nav className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-100 hidden md:flex">
                 <NavItem view="calculator" icon={Calculator} label="Calculator" />
                 <NavItem view="products" icon={PackageIcon} label="Inventory" />
+                <NavItem view="filaments" icon={Database} label="Filaments" />
                 <NavItem view="pos" icon={ShoppingCart} label="POS" />
                 <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
             </nav>
@@ -541,7 +543,7 @@ function App() {
         </header>
 
         {/* Main View Area */}
-        <main className="flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-y-auto relative min-h-0 bg-[#f8fbfa]">
             {activeView === 'calculator' && (
                 <CalculatorView 
                     inputs={inputs}
@@ -574,6 +576,15 @@ function App() {
                     onUpdate={handleUpdateProduct}
                     onDelete={id => setProductToDelete(id)}
                     currency={currency}
+                />
+            )}
+
+            {activeView === 'filaments' && (
+                <FilamentInventory 
+                   onAddFilamentCost={(cost) => {
+                       setInputs((prev: any) => ({ ...prev, materialCost: Math.round(cost * 1000) }));
+                       setActiveView('calculator');
+                   }}
                 />
             )}
 
@@ -759,6 +770,10 @@ function App() {
            <button onClick={() => setActiveView('products')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'products' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
               <PackageIcon size={20} />
               <span className="text-[9px] mt-1 font-bold">Items</span>
+           </button>
+           <button onClick={() => setActiveView('filaments')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'filaments' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
+              <Database size={20} />
+              <span className="text-[9px] mt-1 font-bold">Spools</span>
            </button>
            <button onClick={() => setActiveView('pos')} className={clsx("p-2 rounded-lg flex flex-col items-center", activeView === 'pos' ? "text-brand-600 bg-brand-50" : "text-gray-400")}>
               <ShoppingCart size={20} />

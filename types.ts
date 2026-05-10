@@ -127,6 +127,27 @@ export interface CapitalItem {
   createdAt: number; // For sorting
 }
 
+// --- INVENTORY TYPES ---
+
+export interface Filament {
+  id: string;
+  brand: string;
+  material: string;
+  color: string;
+  colorHex?: string;
+  specialProperty?: string;
+  purchasePrice?: number;
+  purchaseWeight?: number;
+  td: string; // Transmission Distance
+  diameter: number;
+  costPerGram: number; // Will be calculated
+  spoolTare: number;
+  currentGross: number;
+  status: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
 // --- NEW COMMERCE TYPES ---
 
 export interface Product {
